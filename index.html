@@ -18,8 +18,8 @@
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="icon" href="ikon-192.png" type="image/png">
 <link rel="apple-touch-icon" href="ikon-192.png">
-<script src="config.js"></script>
-<script src="kunci.js"></script>
+<script src="config.js?v=1795630579154"></script>
+<script src="kunci.js?v=1795630579154"></script>
 <style>
   :root {
     --bg: #f5f6f8; --surface: #ffffff; --surface-2: #eef0f3;
@@ -2959,6 +2959,6 @@
     };
   })();
 </script>
-<script>if ("serviceWorker" in navigator) navigator.serviceWorker.register("sw.js");</script>
+<script>if ("serviceWorker" in navigator) { navigator.serviceWorker.register("sw.js", { updateViaCache: "none" }).then(r => r.update()); let sudah = !navigator.serviceWorker.controller; navigator.serviceWorker.addEventListener("controllerchange", () => { if (!sudah) { sudah = true; location.reload(); } }); }</script>
 </body>
 </html>
