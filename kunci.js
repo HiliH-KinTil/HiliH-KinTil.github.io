@@ -1,36 +1,49 @@
 /*
- * Keuanganku versi aplikasi: kunci PIN + jalur data ke Apps Script.
- * - Kode rahasia (dari Apps Script, buatKodeAplikasi) dimasukkan sekali dan disimpan di HP ini.
- * - PIN 6 angka dibuat di HP ini, disimpan sebagai sidik (hash), dan diminta setiap aplikasi dibuka
- *   atau setelah ditinggal lebih dari 3 menit.
- * - Kalau URL jalur data belum diisi (config.js), aplikasi berjalan dengan data contoh (mode pratinjau).
+ * Keuanganku versi aplikasi: buka dengan PIN 6 angka atau sidik jari.
+ * - PIN diatur pemilik lewat web Keuanganku (menu "📱 Aplikasi HP") dan diperiksa oleh Apps Script, bukan oleh HP.
+ * - PIN benar = tanda masuk sementara (12 jam, hanya di memori).
+ * - Sidik jari: setelah PIN benar, HP boleh menyimpan tanda perangkat (30 hari). Tanda itu hanya dipakai setelah
+ *   sidik jari dikenali sensor HP (WebAuthn, pemeriksaan pengguna di HP).
+ * - Kalau URL jalur data belum diisi (config.js), aplikasi berjalan dengan data contoh (mode pratinjau, PIN apa saja).
  */
 (function () {
   const URL_API = (window.KEU_API_URL || '').trim();
   const DEMO = !URL_API;
-  const K_KODE = 'keuKode', K_PIN = 'keuPin', K_GAGAL = 'keuPinGagal', K_TERAKHIR = 'keuAktif';
-  const BATAS_DIAM = 3 * 60 * 1000; // kunci lagi setelah 3 menit di latar belakang
-  const MAKS_SALAH_PIN = 5;
+  const K_BIO = 'keuBioId', K_TANDA = 'keuTandaHp', K_TERAKHIR = 'keuAktif', K_TOLAK_BIO = 'keuTolakBio';
+  const BATAS_DIAM = 3 * 60 * 1000; // minta buka kunci lagi setelah 3 menit di latar belakang
   const simpan = (k, v) => { try { v === null ? localStorage.removeItem(k) : localStorage.setItem(k, v); } catch (e) {} };
   const ambil = k => { try { return localStorage.getItem(k); } catch (e) { return null; } };
+  // Bersihkan sisa versi lama (kode rahasia & PIN lokal)
+  ['keuKode', 'keuPin', 'keuPinGagal'].forEach(k => simpan(k, null));
 
+  let tanda = null;            // tanda masuk yang dipakai sekarang
   let bukaResolve, terbuka = new Promise(r => { bukaResolve = r; });
   let sudahBuka = false;
 
-  async function sidik(teks) {
-    const data = new TextEncoder().encode('keuanganku|' + teks);
-    const h = await crypto.subtle.digest('SHA-256', data);
-    return [...new Uint8Array(h)].map(b => b.toString(16).padStart(2, '0')).join('');
+  const b64 = buf => btoa(String.fromCharCode(...new Uint8Array(buf))).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+  const dariB64 = s => Uint8Array.from(atob(s.replace(/-/g, '+').replace(/_/g, '/')), c => c.charCodeAt(0));
+  const acakByte = n => crypto.getRandomValues(new Uint8Array(n));
+
+  async function kirim(isi) {
+    if (DEMO) {
+      await new Promise(r => setTimeout(r, 300));
+      if (isi.fn === 'masukPin') return { ok: true, data: { tanda: 'demo-sesi', jam: 12 } };
+      if (isi.fn === 'tandaPerangkat') return { ok: true, data: { tanda: 'demo-perangkat', hari: 30 } };
+      if (isi.fn === 'cek') return { ok: true, data: { jenis: 'perangkat' } };
+      return { ok: true, data: MOCK[isi.fn](...(isi.args || [])) }; // eslint-disable-line no-undef
+    }
+    let res;
+    try { res = await fetch(URL_API, { method: 'POST', body: JSON.stringify(isi), redirect: 'follow' }); }
+    catch (e) { throw new Error('Tidak bisa terhubung. Periksa internet lalu coba lagi.'); }
+    try { return await res.json(); } catch (e) { throw new Error('Jawaban server tidak terbaca. Coba lagi.'); }
   }
 
-  async function kirim(fn, args, kode) {
-    const res = await fetch(URL_API, { method: 'POST', body: JSON.stringify({ k: kode, fn, args: args || [] }), redirect: 'follow' });
-    let d;
-    try { d = await res.json(); } catch (e) { throw new Error('Jawaban server tidak terbaca. Periksa internet lalu coba lagi.'); }
-    return d;
-  }
+  const bioTersedia = async () => {
+    try { return !!(window.PublicKeyCredential && await PublicKeyCredential.isUserVerifyingPlatformAuthenticatorAvailable()); }
+    catch (e) { return false; }
+  };
 
-  // ---------- Layar kunci ----------
+  // ---------- Tampilan layar kunci ----------
   const gaya = document.createElement('style');
   gaya.textContent = `
     #kunci { position: fixed; inset: 0; z-index: 9999; display: flex; flex-direction: column; align-items: center; justify-content: center;
@@ -40,108 +53,110 @@
     #kunci .logo { width: 72px; height: 72px; border-radius: 18px; box-shadow: 0 8px 24px rgba(0,0,0,.25); }
     #kunci h1 { font-size: 20px; margin: 6px 0 0; }
     #kunci p { margin: 0; opacity: .9; max-width: 320px; font-size: 14px; }
-    #kunci .pesan { min-height: 20px; color: #fde68a; font-size: 13px; }
+    #kunci .pesan { min-height: 20px; color: #fde68a; font-size: 13px; max-width: 320px; }
     #kunci .titik { display: flex; gap: 12px; margin: 10px 0 6px; }
     #kunci .titik i { width: 14px; height: 14px; border-radius: 50%; border: 2px solid #fff; }
     #kunci .titik i.isi { background: #fff; }
     #kunci .pad { display: grid; grid-template-columns: repeat(3, 68px); gap: 12px; margin-top: 6px; }
     #kunci .pad button { height: 60px; border-radius: 50%; border: none; background: rgba(255,255,255,.16); color: #fff; font-size: 22px; font-weight: 600; cursor: pointer; }
     #kunci .pad button:active { background: rgba(255,255,255,.32); }
-    #kunci .pad button.kosong { background: none; }
-    #kunci input { width: min(320px, 100%); padding: 12px 14px; border-radius: 12px; border: none; font: 600 16px ui-monospace, monospace; text-align: center; letter-spacing: .04em; }
+    #kunci .pad button:disabled { opacity: .4; }
+    #kunci .pad .kosong { background: none; }
+    #kunci .pad .jari { font-size: 26px; }
     #kunci .utama { padding: 12px 22px; border-radius: 12px; border: none; background: #fff; color: #0f766e; font-weight: 700; font-size: 15px; cursor: pointer; }
-    #kunci .utama:disabled { opacity: .6; }
-    #kunci .tipis { background: none; border: none; color: #fff; opacity: .85; text-decoration: underline; cursor: pointer; font-size: 13px; }
-    #kunci .demo { position: absolute; top: 14px; left: 50%; transform: translateX(-50%); background: #fde68a; color: #713f12; font-size: 12px; font-weight: 700; padding: 4px 10px; border-radius: 99px; }
+    #kunci .tipis { background: none; border: none; color: #fff; opacity: .85; text-decoration: underline; cursor: pointer; font-size: 13px; padding: 6px; }
+    #kunci .jari-besar { font-size: 54px; line-height: 1; margin: 8px 0; }
+    #kunci .demo { position: absolute; top: 14px; left: 50%; transform: translateX(-50%); background: #fde68a; color: #713f12; font-size: 12px; font-weight: 700; padding: 4px 10px; border-radius: 99px; white-space: nowrap; }
   `;
   document.head.appendChild(gaya);
-
   const layar = document.createElement('div');
   layar.id = 'kunci';
-  document.addEventListener('DOMContentLoaded', () => document.body.appendChild(layar));
+  layar.hidden = true;
   const logo = '<img class="logo" src="ikon-192.png" alt="">';
-
-  function tampil(html) { layar.innerHTML = (DEMO ? '<span class="demo">Mode contoh · data tidak tersimpan</span>' : '') + html; layar.hidden = false; }
-  function tutupKunci() {
+  const pesan = m => { const el = layar.querySelector('.pesan'); if (el) el.textContent = m || ''; };
+  function tampil(html) { layar.innerHTML = (DEMO ? '<span class="demo">Mode contoh · PIN apa saja · data tidak tersimpan</span>' : '') + html; layar.hidden = false; }
+  function selesai() {
     layar.hidden = true;
     simpan(K_TERAKHIR, String(Date.now()));
     if (!sudahBuka) { sudahBuka = true; bukaResolve(); }
   }
 
-  // Masukkan kode rahasia (sekali saja)
-  function layarKode(pesan) {
-    tampil(logo + '<h1>Hubungkan Keuanganku</h1><p>Masukkan kode rahasia dari Apps Script (fungsi <b>buatKodeAplikasi</b>). Cukup sekali di HP ini.</p>' +
-      '<input id="kKode" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="xxxxxx-xxxxxx-xxxxxx-xxxxxx">' +
-      '<div class="pesan" id="kPesan">' + (pesan || '') + '</div><button class="utama" id="kOk">Hubungkan</button>');
-    const ok = layar.querySelector('#kOk');
-    ok.onclick = async () => {
-      const kode = layar.querySelector('#kKode').value.trim();
-      if (!kode) return;
-      ok.disabled = true; layar.querySelector('#kPesan').textContent = 'Memeriksa…';
-      try {
-        const d = await kirim('cek', [], kode);
-        if (d.ok) { simpan(K_KODE, kode); layarBuatPin(); }
-        else layar.querySelector('#kPesan').textContent = d.error || 'Kode tidak diterima.';
-      } catch (e) { layar.querySelector('#kPesan').textContent = e.message; }
-      ok.disabled = false;
-    };
-  }
-
-  // Papan angka PIN
-  function papan(judul, teks, selesai, bawah) {
-    let isi = '';
-    tampil(logo + '<h1>' + judul + '</h1><p>' + teks + '</p><div class="titik">' + '<i></i>'.repeat(6) + '</div><div class="pesan" id="kPesan"></div>' +
-      '<div class="pad">' + [1, 2, 3, 4, 5, 6, 7, 8, 9].map(n => '<button data-n="' + n + '">' + n + '</button>').join('') +
-      '<button class="kosong" disabled></button><button data-n="0">0</button><button data-n="x" aria-label="Hapus">⌫</button></div>' + (bawah || ''));
+  // Layar PIN (+ tombol sidik jari kalau sudah diaktifkan di HP ini)
+  function layarPin(info) {
+    const adaBio = !!(ambil(K_BIO) && ambil(K_TANDA));
+    let isi = '', sibuk = false;
+    tampil(logo + '<h1>Keuanganku</h1><p>Masukkan PIN untuk membuka.</p><div class="titik">' + '<i></i>'.repeat(6) + '</div>' +
+      '<div class="pesan">' + (info || '') + '</div><div class="pad">' + [1, 2, 3, 4, 5, 6, 7, 8, 9].map(n => '<button data-n="' + n + '">' + n + '</button>').join('') +
+      (adaBio ? '<button class="jari" data-jari aria-label="Buka dengan sidik jari">👆</button>' : '<button class="kosong" disabled></button>') +
+      '<button data-n="0">0</button><button data-n="x" aria-label="Hapus">⌫</button></div>');
     const titik = () => layar.querySelectorAll('.titik i').forEach((t, i) => t.classList.toggle('isi', i < isi.length));
-    layar.querySelector('.pad').onclick = e => {
+    const kunciPad = v => layar.querySelectorAll('.pad button').forEach(b => { if (!b.classList.contains('kosong')) b.disabled = v; });
+    layar.querySelector('.pad').onclick = async e => {
+      if (e.target.closest('[data-jari]')) return bukaBio();
       const b = e.target.closest('button[data-n]');
-      if (!b) return;
-      if (b.dataset.n === 'x') isi = isi.slice(0, -1);
-      else if (isi.length < 6) isi += b.dataset.n;
+      if (!b || sibuk) return;
+      if (b.dataset.n === 'x') isi = isi.slice(0, -1); else if (isi.length < 6) isi += b.dataset.n;
       titik();
-      if (isi.length === 6) { const p = isi; isi = ''; setTimeout(() => { titik(); selesai(p); }, 120); }
+      if (isi.length < 6) return;
+      sibuk = true; kunciPad(true); pesan('Memeriksa…');
+      try {
+        const d = await kirim({ fn: 'masukPin', pin: isi });
+        if (d.ok) { tanda = d.data.tanda; pesan(''); return setelahPin(); }
+        pesan(d.error || 'PIN tidak diterima.');
+      } catch (err) { pesan(err.message); }
+      isi = ''; titik(); sibuk = false; kunciPad(false);
     };
-    return m => { layar.querySelector('#kPesan').textContent = m; };
+    if (adaBio && !info) setTimeout(bukaBio, 300);
   }
 
-  function layarBuatPin() {
-    const pesan = papan('Buat PIN', 'Buat PIN 6 angka untuk membuka Keuanganku di HP ini.', async p1 => {
-      const pesan2 = papan('Ulangi PIN', 'Masukkan PIN yang sama sekali lagi.', async p2 => {
-        if (p1 !== p2) { layarBuatPin(); setTimeout(() => layar.querySelector('#kPesan').textContent = 'PIN tidak sama, ulangi dari awal.', 0); return; }
-        simpan(K_PIN, await sidik(p1)); simpan(K_GAGAL, '0'); tutupKunci();
-      });
-    });
-    return pesan;
-  }
-
-  function layarPin() {
-    const pesan = papan('Keuanganku', 'Masukkan PIN untuk membuka.', async p => {
-      if (await sidik(p) === ambil(K_PIN)) { simpan(K_GAGAL, '0'); tutupKunci(); return; }
-      const gagal = Number(ambil(K_GAGAL) || 0) + 1;
-      simpan(K_GAGAL, String(gagal));
-      if (gagal >= MAKS_SALAH_PIN) {
-        // Terlalu banyak salah: hapus kode & PIN dari HP ini, harus dihubungkan ulang dengan kode rahasia
-        simpan(K_KODE, null); simpan(K_PIN, null); simpan(K_GAGAL, null);
-        layarKode('PIN salah ' + MAKS_SALAH_PIN + ' kali. Demi keamanan, hubungkan ulang dengan kode rahasia.');
-        return;
-      }
-      pesan('PIN salah. Sisa ' + (MAKS_SALAH_PIN - gagal) + ' kali percobaan.');
-    }, '<button class="tipis" id="kLupa">Lupa PIN?</button>');
-    layar.querySelector('#kLupa').onclick = () => {
-      if (confirm('Hubungkan ulang dengan kode rahasia dan buat PIN baru? Data di sheet tidak berubah.')) {
-        simpan(K_KODE, null); simpan(K_PIN, null); layarKode();
+  // Setelah PIN benar: tawarkan sidik jari sekali (kalau HP mendukung dan belum aktif)
+  async function setelahPin() {
+    if (ambil(K_BIO) && ambil(K_TANDA)) return selesai();
+    if (ambil(K_TOLAK_BIO) || !(await bioTersedia())) return selesai();
+    tampil(logo + '<div class="jari-besar">👆</div><h1>Buka dengan sidik jari?</h1><p>Lain kali cukup tempel sidik jari. PIN tetap bisa dipakai kapan saja.</p>' +
+      '<div class="pesan"></div><button class="utama" id="kBioYa">Aktifkan sidik jari</button><button class="tipis" id="kBioNanti">Nanti saja</button>');
+    layar.querySelector('#kBioNanti').onclick = () => { simpan(K_TOLAK_BIO, '1'); selesai(); };
+    layar.querySelector('#kBioYa').onclick = async () => {
+      pesan('Tempel sidik jari…');
+      try {
+        const cred = await navigator.credentials.create({ publicKey: {
+          rp: { name: 'Keuanganku', id: location.hostname },
+          user: { id: acakByte(16), name: 'keuanganku', displayName: 'Keuanganku' },
+          challenge: acakByte(32),
+          pubKeyCredParams: [{ type: 'public-key', alg: -7 }, { type: 'public-key', alg: -257 }],
+          authenticatorSelection: { authenticatorAttachment: 'platform', userVerification: 'required', residentKey: 'discouraged' },
+          timeout: 60000,
+        } });
+        const d = await kirim({ fn: 'tandaPerangkat', t: tanda });
+        if (!d.ok) throw new Error(d.error || 'Gagal mengaktifkan sidik jari.');
+        simpan(K_BIO, b64(cred.rawId)); simpan(K_TANDA, d.data.tanda);
+        selesai();
+      } catch (err) {
+        pesan(err && err.name === 'NotAllowedError' ? 'Dibatalkan. Bisa diaktifkan lagi nanti.' : (err.message || 'Sidik jari gagal diaktifkan.'));
       }
     };
   }
 
-  function mulai() {
-    if (DEMO) { if (!ambil(K_PIN)) return layarBuatPin(); return layarPin(); }
-    if (!ambil(K_KODE)) return layarKode();
-    if (!ambil(K_PIN)) return layarBuatPin();
-    layarPin();
+  // Buka dengan sidik jari: sensor HP memeriksa jari, lalu tanda perangkat dipakai
+  async function bukaBio() {
+    const id = ambil(K_BIO), t = ambil(K_TANDA);
+    if (!id || !t) return layarPin();
+    pesan('Tempel sidik jari…');
+    try {
+      await navigator.credentials.get({ publicKey: {
+        challenge: acakByte(32), allowCredentials: [{ type: 'public-key', id: dariB64(id) }], userVerification: 'required', timeout: 60000,
+      } });
+    } catch (err) { return pesan(err && err.name === 'NotAllowedError' ? 'Sidik jari dibatalkan. Pakai PIN atau coba lagi.' : 'Sidik jari tidak bisa dipakai. Pakai PIN.'); }
+    try {
+      const d = await kirim({ fn: 'cek', t });
+      if (d.ok) { tanda = t; return selesai(); }
+      // Tanda kedaluwarsa (30 hari) atau PIN sudah diganti: minta PIN sekali, sidik jari diaktifkan ulang otomatis
+      simpan(K_TANDA, null); simpan(K_BIO, null); simpan(K_TOLAK_BIO, null);
+      layarPin('Sidik jari perlu diperbarui. Masukkan PIN sekali.');
+    } catch (err) { pesan(err.message); }
   }
-  document.addEventListener('DOMContentLoaded', mulai);
+
+  document.addEventListener('DOMContentLoaded', () => { document.body.appendChild(layar); layarPin(); });
 
   // Kunci lagi setelah ditinggal lama
   document.addEventListener('visibilitychange', () => {
@@ -155,10 +170,9 @@
     demo: DEMO,
     async panggil(fn, args) {
       await terbuka;
-      if (DEMO) { await new Promise(r => setTimeout(r, 250)); return MOCK[fn](...args); } // eslint-disable-line no-undef
-      const d = await kirim(fn, args, ambil(K_KODE));
+      const d = await kirim({ fn, args: args || [], t: tanda });
       if (d.ok) return d.data;
-      if (d.kode) { simpan(K_KODE, null); layarKode('Kode rahasia sudah tidak berlaku. Masukkan kode yang baru.'); }
+      if (d.sesi) { tanda = null; layarPin('Sesi berakhir. Buka kunci lagi, lalu ulangi.'); }
       throw new Error(d.error || 'Gagal menghubungi server.');
     },
     kunci() { layarPin(); },

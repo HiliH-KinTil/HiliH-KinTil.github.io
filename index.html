@@ -562,6 +562,13 @@
   .side .theme-seg { display: grid; grid-template-columns: 1.6fr 1fr 1fr; gap: 2px; background: rgba(255,255,255,.14); border-radius: 10px; margin-bottom: 6px; }
   .side .theme-seg button { color: #fff; padding: 5px 0; font-size: 12px; }
   .side .theme-seg button:hover { background: rgba(255,255,255,.12); }
+  .side .tautan-hp { display: block; width: 100%; margin: 0 0 6px; padding: 6px 8px; border: none; border-radius: 10px; background: rgba(255,255,255,.1); color: #fff; font-size: 12.5px; text-align: left; }
+  .side .tautan-hp:hover { background: rgba(255,255,255,.2); }
+  .hp-status { display: grid; gap: 6px; margin: 8px 0 12px; font-size: 13.5px; }
+  .hp-status div { display: flex; justify-content: space-between; gap: 8px; background: var(--surface-2); border-radius: 10px; padding: 7px 10px; }
+  .hp-status b.ok { color: var(--green); } .hp-status b.lewat { color: var(--red); }
+  .hp-aksi { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
+  #dlgAplikasi input { letter-spacing: .3em; font-size: 18px; text-align: center; }
   .side .theme-seg button.on, .side .theme-seg button.on:hover { background: #fff; color: #134e4a; font-weight: 600; }
   .side .ghost { width: 100%; padding: 8px; border: none; border-radius: 10px; background: rgba(255,255,255,.14); color: #fff; font-weight: 600; transition: padding var(--gerak), background .15s; }
   .side .ghost:hover { background: rgba(255,255,255,.24); }
@@ -600,6 +607,7 @@
     .lipat-bawah { display: contents; }
     .side .sub { grid-row: 2; grid-column: 1 / -1; padding: 0; font-size: 11px; }
     .side .theme-seg { grid-row: 3; grid-column: 1 / -1; margin: 6px 0 0; }
+    .side .tautan-hp { grid-row: 4; grid-column: 1 / -1; margin: 6px 0 0; text-align: center; }
     .side .ghost { grid-row: 1; grid-column: 2; width: auto; padding: 6px 10px; font-size: 13px; }
     .side-nav { position: fixed; z-index: 8; left: 0; right: 0; bottom: 0; flex-direction: row; gap: 0; background: var(--surface); border-top: 1px solid var(--border); padding-bottom: env(safe-area-inset-bottom); }
     .side .nav, .side .nav:hover { flex: 1 1 0; min-width: 0; flex-direction: column; gap: 2px; padding: 8px 4px 9px; border-radius: 0; font-size: 11px; text-align: center; color: var(--muted); background: transparent; }
@@ -632,6 +640,7 @@
       <button data-t="light" title="Mode terang">☀️</button>
       <button data-t="dark" title="Mode gelap">🌙</button>
     </div>
+    <button type="button" class="tautan-hp" id="btnAplikasiHp">📱 Aplikasi HP</button>
   </div>
   <button class="ghost" id="btnRefresh" title="Muat ulang dari sheet" data-label="Muat ulang">↻<span class="teks">&nbsp;Muat ulang</span></button>
 </aside>
@@ -866,6 +875,26 @@
   </div>
 </div>
 </div>
+
+<!-- Pengaturan aplikasi HP (hanya di web, khusus pemilik) -->
+<dialog id="dlgAplikasi">
+  <form>
+    <h3>📱 Aplikasi HP</h3>
+    <div class="info">Aplikasi Keuanganku di HP (<b>hilih-kintil.github.io</b>) dibuka dengan PIN 6 angka ini, atau dengan sidik jari setelah PIN pernah dimasukkan.</div>
+    <div class="hp-status" id="hpStatus">Memuat…</div>
+    <div class="field"><label for="hpPin1">PIN baru (6 angka)</label><input id="hpPin1" type="password" inputmode="numeric" maxlength="6" autocomplete="new-password"></div>
+    <div class="field"><label for="hpPin2">Ulangi PIN baru</label><input id="hpPin2" type="password" inputmode="numeric" maxlength="6" autocomplete="new-password"></div>
+    <div class="meta">Mengganti PIN membuat semua HP yang tersambung keluar dan harus memasukkan PIN baru. Hindari PIN mudah seperti 123456 atau tanggal lahir.</div>
+    <div class="hp-aksi">
+      <button type="button" class="small" id="hpBukaKunci">🔓 Buka kunci PIN</button>
+      <button type="button" class="small danger" id="hpKeluarSemua">Keluarkan semua HP</button>
+    </div>
+    <div class="dlg-actions">
+      <button type="button" data-close>Tutup</button>
+      <button type="submit" class="primary" id="hpSimpan">Simpan PIN</button>
+    </div>
+  </form>
+</dialog>
 
 <!-- Tabungan: setor / ambil -->
 <dialog id="dlgTabung">
@@ -2630,6 +2659,43 @@
     }
   });
 
+  // ---------- Pengaturan aplikasi HP ----------
+  // Di web (pemilik): atur PIN aplikasi. Di dalam aplikasi HP: tombol yang sama jadi "Kunci aplikasi".
+  if (window.APLIKASI) {
+    $('#btnAplikasiHp').textContent = '🔒 Kunci aplikasi';
+    $('#btnAplikasiHp').addEventListener('click', () => APLIKASI.kunci());
+  } else {
+    const tampilHp = s => {
+      $('#hpStatus').innerHTML =
+        '<div><span>PIN aplikasi</span><b class="' + (s.pinAda ? 'ok' : 'lewat') + '">' + (s.pinAda ? '✓ Sudah diatur' : 'Belum diatur') + '</b></div>' +
+        '<div><span>HP dengan sidik jari</span><b>' + s.perangkat + '</b></div>' +
+        '<div><span>Status kunci</span><b class="' + (s.terkunci ? 'lewat' : 'ok') + '">' +
+          (s.terkunci === 'permanen' ? 'Terkunci (PIN salah 15×)' : s.terkunci ? 'Terkunci ' + s.terkunci + ' lagi' : 'Tidak terkunci') +
+          (s.salah && !s.terkunci ? ' · ' + s.salah + '× salah' : '') + '</b></div>';
+      $('#hpBukaKunci').hidden = !s.terkunci && !s.salah;
+      $('#hpKeluarSemua').hidden = !s.perangkat && !s.sesi;
+      $('#hpSimpan').textContent = s.pinAda ? 'Ganti PIN' : 'Simpan PIN';
+    };
+    $('#btnAplikasiHp').addEventListener('click', () => {
+      $('#hpPin1').value = ''; $('#hpPin2').value = ''; $('#hpStatus').textContent = 'Memuat…';
+      $('#dlgAplikasi').showModal();
+      call('statusAplikasi').then(tampilHp).catch(e => { $('#hpStatus').textContent = (e && e.message) || String(e); });
+    });
+    ['#hpPin1', '#hpPin2'].forEach(s => $(s).addEventListener('input', e => { e.target.value = e.target.value.replace(/\D/g, '').slice(0, 6); }));
+    $('#dlgAplikasi form').addEventListener('submit', async e => {
+      e.preventDefault();
+      const p1 = $('#hpPin1').value, p2 = $('#hpPin2').value;
+      if (!/^\d{6}$/.test(p1)) return toast('PIN harus 6 angka', true);
+      if (p1 !== p2) return toast('PIN dan ulangannya tidak sama', true);
+      if (!confirm('Simpan PIN baru? Semua HP yang tersambung akan keluar dan harus memasukkan PIN ini.')) return;
+      if (await run(e.submitter, 'aturPinAplikasi', [p1], 'PIN aplikasi disimpan', tampilHp)) { $('#hpPin1').value = ''; $('#hpPin2').value = ''; }
+    });
+    $('#hpBukaKunci').addEventListener('click', e => run(e.currentTarget, 'bukaKunciAplikasi', [], 'Kunci PIN dibuka', tampilHp));
+    $('#hpKeluarSemua').addEventListener('click', e => {
+      if (confirm('Keluarkan semua HP? Setiap HP harus memasukkan PIN lagi.')) run(e.currentTarget, 'keluarkanSemuaPerangkat', [], 'Semua HP dikeluarkan', tampilHp);
+    });
+  }
+
   // ---------- Tabungan ----------
   const IKON_TAB = ['🐷', '🛟', '📱', '🏍️', '🏠', '🎓', '✈️', '💍', '🎁', '🕋'];
   let ikonTab = IKON_TAB[0], ubahTab = null, aksiTab = 'setor';
@@ -2817,6 +2883,7 @@
       W(18, 'Ayu', '', 200000, 200000, 200000, 200000, 50000, 50000, 50000, 50000, 200000),
       W(23, 'Srono', '', '-', '-', '-', null, 150000, 150000, 150000, 'rapel september', 300000),
     ], updatedAt: 'pratinjau (data contoh)', sheetUrl: '#' };
+    const aplikasi = { pin: '' };
     const tab = { target: [{ row: 2, nama: 'Dana darurat', target: 6000000, sampai: '06/2027', ikon: '🛟', dibuat: '26/11/2026' }] };
     keu.transaksi.push({ row: 12, key: 'kk12', tanggal: '05/10/2026', jenis: 'Keluar', kategori: 'Tabungan', nominal: 500000, akun: 'SeaBank', catatan: 'Setor ke Dana darurat', sumber: 'tabung|Dana darurat' });
     db.people.forEach(p => p.loans.forEach(l => { l.selisih = Math.round(l.cicilan * 0.08); }));
@@ -2861,6 +2928,10 @@
         else keu.transaksi.push({ row: 2000 + keu.transaksi.length, key: 'u' + Date.now(), tanggal: dd + '/' + m + '/' + y, jenis: 'Masuk', kategori: 'Untung cicilan', nominal: rp, akun: '', catatan: 'Untung cicilan ' + nama + ' · ' + cap(BULAN[b % 12]) + ' ' + Math.floor(b / 12), diinput: '', sumber });
         return this.getKeuangan();
       },
+      statusAplikasi: () => ({ pinAda: !!aplikasi.pin, salah: 0, terkunci: '', perangkat: aplikasi.pin ? 1 : 0, sesi: 0 }),
+      aturPinAplikasi(pin) { if (/^(\d)\1{5}$|^123456$/.test(pin)) throw new Error('PIN terlalu mudah ditebak. Pakai kombinasi lain.'); aplikasi.pin = pin; return this.statusAplikasi(); },
+      bukaKunciAplikasi() { return this.statusAplikasi(); },
+      keluarkanSemuaPerangkat() { return this.statusAplikasi(); },
       getTabungan: () => JSON.parse(JSON.stringify(tab)),
       tambahTargetTabungan(d) {
         if (tab.target.some(t => t.nama.toLowerCase() === d.nama.toLowerCase())) throw new Error('Target "' + d.nama + '" sudah ada.');
