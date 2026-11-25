@@ -23,6 +23,11 @@
   const b64 = buf => btoa(String.fromCharCode(...new Uint8Array(buf))).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
   const dariB64 = s => Uint8Array.from(atob(s.replace(/-/g, '+').replace(/_/g, '/')), c => c.charCodeAt(0));
   const acakByte = n => crypto.getRandomValues(new Uint8Array(n));
+  // Gambar sidik jari (garis, ikut warna teks). Bentuk dari ikon "fingerprint" Lucide (lisensi ISC).
+  const SIDIK = (ukuran) => '<svg class="sidik" width="' + ukuran + '" height="' + ukuran + '" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' +
+    '<path d="M12 10a2 2 0 0 0-2 2c0 1.02-.1 2.51-.26 4"/><path d="M14 13.12c0 2.38 0 6.38-1 8.88"/><path d="M17.29 21.02c.12-.6.43-2.3.5-3.02"/>' +
+    '<path d="M2 12a10 10 0 0 1 18-6"/><path d="M2 16h.01"/><path d="M21.8 16c.2-2 .131-5.354 0-6"/><path d="M5 19.5C5.5 18 6 15 6 12a6 6 0 0 1 .34-2"/>' +
+    '<path d="M8.65 22c.21-.66.45-1.32.57-2"/><path d="M9 6.8a6 6 0 0 1 9 5.2v2"/></svg>';
 
   async function kirim(isi) {
     if (DEMO) {
@@ -62,10 +67,11 @@
     #kunci .pad button:active { background: rgba(255,255,255,.32); }
     #kunci .pad button:disabled { opacity: .4; }
     #kunci .pad .kosong { background: none; }
-    #kunci .pad .jari { font-size: 26px; }
+    #kunci .pad .jari { display: grid; place-items: center; }
+    #kunci .sidik { display: block; }
     #kunci .utama { padding: 12px 22px; border-radius: 12px; border: none; background: #fff; color: #0f766e; font-weight: 700; font-size: 15px; cursor: pointer; }
     #kunci .tipis { background: none; border: none; color: #fff; opacity: .85; text-decoration: underline; cursor: pointer; font-size: 13px; padding: 6px; }
-    #kunci .jari-besar { font-size: 54px; line-height: 1; margin: 8px 0; }
+    #kunci .jari-besar { width: 104px; height: 104px; border-radius: 50%; display: grid; place-items: center; margin: 8px 0; background: rgba(255,255,255,.14); }
     #kunci .demo { position: absolute; top: 14px; left: 50%; transform: translateX(-50%); background: #fde68a; color: #713f12; font-size: 12px; font-weight: 700; padding: 4px 10px; border-radius: 99px; white-space: nowrap; }
   `;
   document.head.appendChild(gaya);
@@ -87,7 +93,7 @@
     let isi = '', sibuk = false;
     tampil(logo + '<h1>Keuanganku</h1><p>Masukkan PIN untuk membuka.</p><div class="titik">' + '<i></i>'.repeat(6) + '</div>' +
       '<div class="pesan">' + (info || '') + '</div><div class="pad">' + [1, 2, 3, 4, 5, 6, 7, 8, 9].map(n => '<button data-n="' + n + '">' + n + '</button>').join('') +
-      (adaBio ? '<button class="jari" data-jari aria-label="Buka dengan sidik jari">👆</button>' : '<button class="kosong" disabled></button>') +
+      (adaBio ? '<button class="jari" data-jari aria-label="Buka dengan sidik jari">' + SIDIK(30) + '</button>' : '<button class="kosong" disabled></button>') +
       '<button data-n="0">0</button><button data-n="x" aria-label="Hapus">⌫</button></div>');
     const titik = () => layar.querySelectorAll('.titik i').forEach((t, i) => t.classList.toggle('isi', i < isi.length));
     const kunciPad = v => layar.querySelectorAll('.pad button').forEach(b => { if (!b.classList.contains('kosong')) b.disabled = v; });
@@ -113,7 +119,7 @@
   async function setelahPin() {
     if (ambil(K_BIO) && ambil(K_TANDA)) return selesai();
     if (ambil(K_TOLAK_BIO) || !(await bioTersedia())) return selesai();
-    tampil(logo + '<div class="jari-besar">👆</div><h1>Buka dengan sidik jari?</h1><p>Lain kali cukup tempel sidik jari. PIN tetap bisa dipakai kapan saja.</p>' +
+    tampil(logo + '<div class="jari-besar">' + SIDIK(64) + '</div><h1>Buka dengan sidik jari?</h1><p>Lain kali cukup tempel sidik jari. PIN tetap bisa dipakai kapan saja.</p>' +
       '<div class="pesan"></div><button class="utama" id="kBioYa">Aktifkan sidik jari</button><button class="tipis" id="kBioNanti">Nanti saja</button>');
     layar.querySelector('#kBioNanti').onclick = () => { simpan(K_TOLAK_BIO, '1'); selesai(); };
     layar.querySelector('#kBioYa').onclick = async () => {
