@@ -1,5 +1,5 @@
-const CACHE = 'keuanganku-1795630579154';
-const FILE = ['./', 'index.html', 'kunci.js?v=1795630579154', 'config.js?v=1795630579154', 'manifest.webmanifest', 'ikon-192.png', 'ikon-512.png'];
+const CACHE = 'keuanganku-1795767197698';
+const FILE = ['./', 'index.html', 'kunci.js?v=1795767197698', 'config.js?v=1795767197698', 'manifest.webmanifest', 'ikon-192.png', 'ikon-512.png'];
 self.addEventListener('install', e => { e.waitUntil(caches.open(CACHE).then(c => c.addAll(FILE)).then(() => self.skipWaiting())); });
 self.addEventListener('activate', e => { e.waitUntil(caches.keys().then(ks => Promise.all(ks.filter(k => k !== CACHE).map(k => caches.delete(k)))).then(() => self.clients.claim())); });
 self.addEventListener('fetch', e => {

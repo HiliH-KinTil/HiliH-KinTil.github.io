@@ -18,8 +18,8 @@
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="icon" href="ikon-192.png" type="image/png">
 <link rel="apple-touch-icon" href="ikon-192.png">
-<script src="config.js?v=1795630579154"></script>
-<script src="kunci.js?v=1795630579154"></script>
+<script src="config.js?v=1795767197698"></script>
+<script src="kunci.js?v=1795767197698"></script>
 <style>
   :root {
     --bg: #f5f6f8; --surface: #ffffff; --surface-2: #eef0f3;
@@ -1556,7 +1556,11 @@
   let bulanWifi = null, bulanLain = null;
   const bulanAcuan = () => halaman === 'wifi' ? HARI.bulan - 1 : HARI.bulan;
 
+  // Posisi gulir disimpan per menu: menggulir di satu menu tidak menggeser menu lain
+  const posisiGulir = {};
   function showPage(p) {
+    const ganti = p !== halaman;
+    if (ganti) posisiGulir[halaman] = window.scrollY;
     if (p === 'wifi' && halaman !== 'wifi') { bulanLain = bulan; bulan = bulanWifi === null ? HARI.bulan - 1 : bulanWifi; }
     if (p !== 'wifi' && halaman === 'wifi') { bulanWifi = bulan; bulan = bulanLain; }
     halaman = p;
@@ -1572,6 +1576,7 @@
     if (p === 'wifi' && !WIFI) loadWifi();
     if (p === 'tabung') { if (!KEU) loadKeu(); if (!TAB) loadTabung(); }
     renderAktif();
+    if (ganti) window.scrollTo(0, posisiGulir[p] || 0);
   }
 
   function renderAktif() {
